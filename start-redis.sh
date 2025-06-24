@@ -39,7 +39,7 @@ source .env
 REDIS_PASSWORD=$(echo "$REDIS_URL" | awk -F':' '{print $3}' | awk -F'@' '{print $1}')
 REDIS_PORT=$(echo "$REDIS_URL" | awk -F':' '{print $4}' | awk -F'\/' '{print $1}')
 
-if [ "$REDIS_PASSWORD" = "redis-pw" ]; then
+if [ "$REDIS_PASSWORD" == "redis-pw" ]; then
   echo "You are using the default Redis password"
   read -p "Should we generate a random password for you? [y/N]: " -r REPLY
   if ! [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -55,5 +55,5 @@ docker run -d \
   --name $REDIS_CONTAINER_NAME \
   -p "$REDIS_PORT":6379 \
   redis \
-  /bin/sh -c "redis-server --requirepass \"$REDIS_PASSWORD\"" \
+  /bin/sh -c "redis-server --requirepass $REDIS_PASSWORD" \
   && echo "Redis container '$REDIS_CONTAINER_NAME' was successfully created"
