@@ -1,13 +1,9 @@
 import { defineConfig } from "vitest/config";
-import path from "path";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   test: {
     setupFiles: ["dotenv/config"],
   },
-  resolve: {
-    alias: {
-      "~": path.resolve(__dirname, "./src"),
-    },
-  },
+  plugins: [tsconfigPaths()],
 });
