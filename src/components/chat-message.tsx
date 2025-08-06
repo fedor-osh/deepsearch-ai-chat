@@ -1,8 +1,11 @@
+import type { Message } from "ai";
 import ReactMarkdown, { type Components } from "react-markdown";
+import { Search, Loader2 } from "lucide-react";
+
+type MessagePart = NonNullable<Message["parts"]>[number];
 
 interface ChatMessageProps {
-  text: string;
-  role: string;
+  message: Message;
   userName: string;
 }
 
@@ -38,8 +41,61 @@ const Markdown = ({ children }: { children: string }) => {
   return <ReactMarkdown components={components}>{children}</ReactMarkdown>;
 };
 
-export const ChatMessage = ({ text, role, userName }: ChatMessageProps) => {
-  const isAI = role === "assistant";
+const ToolInvocation = ({ part }: { part: MessagePart }) => {
+  if (part.type !== "tool-invocation") return null;
+
+  const { toolInvocation } = part;
+  const isPartial = toolInvocation.state === "partial-call";
+  const isCall = toolInvocation.state === "call";
+  const isResult = toolInvocation.state === "result";
+
+  return (
+    <div className="mb-4 rounded-lg border border-gray-600 bg-gray-700 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <Search className="size-4 text-blue-400" />
+        <span className="text-sm font-medium text-gray-300">
+          {toolInvocation.toolName}
+        </span>
+        {isPartial && (
+          <Loader2 className="size-3 animate-spin text-yellow-400" />
+        )}
+        {isCall && <span className="text-xs text-yellow-400">Calling...</span>}
+        {isResult && <span className="text-xs text-green-400">Complete</span>}
+      </div>
+
+      {isPartial || isCall ? (
+        <div className="text-sm text-gray-400">
+          <div className="mb-1 font-medium">Arguments:</div>
+          <pre className="rounded bg-gray-800 p-2 text-xs">
+            {JSON.stringify(toolInvocation.args, null, 2)}
+          </pre>
+        </div>
+      ) : isResult ? (
+        <div className="text-sm text-gray-400">
+          <div className="mb-1 font-medium">Result:</div>
+          <pre className="rounded bg-gray-800 p-2 text-xs">
+            {JSON.stringify(toolInvocation.result, null, 2)}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const MessagePartRenderer = ({ part }: { part: MessagePart }) => {
+  switch (part.type) {
+    case "text":
+      return <Markdown>{part.text}</Markdown>;
+    case "tool-invocation":
+      return <ToolInvocation part={part} />;
+    default:
+      return null;
+  }
+};
+
+export const ChatMessage = ({ message, userName }: ChatMessageProps) => {
+  const isAI = message.role === "assistant";
+  const parts = message.parts || [];
 
   return (
     <div className="mb-6">
@@ -53,7 +109,13 @@ export const ChatMessage = ({ text, role, userName }: ChatMessageProps) => {
         </p>
 
         <div className="prose prose-invert max-w-none">
-          <Markdown>{text}</Markdown>
+          {parts.length > 0 ? (
+            parts.map((part, index) => (
+              <MessagePartRenderer key={index} part={part} />
+            ))
+          ) : (
+            <Markdown>{message.content || ""}</Markdown>
+          )}
         </div>
       </div>
     </div>
