@@ -1,6 +1,6 @@
-import { and, count, eq, gte } from "drizzle-orm";
+import { and, count, eq, gte, desc, asc, ne } from "drizzle-orm";
 import { db } from "./index";
-import { users, userRequests, chats } from "./schema";
+import { users, userRequests, chats, messages } from "./schema";
 import type { Message } from "ai";
 import type { DB } from "./schema";
 
@@ -69,26 +69,40 @@ export async function upsertChat({
   userId,
   chatId,
   title,
-  messages,
+  messages: messageArray,
 }: {
   userId: string;
   chatId: string;
   title: string;
   messages: Message[];
 }) {
+  // Check if chat exists and belongs to the user
   const existingChat = await db
     .select()
     .from(chats)
-    .where(eq(chats.id, chatId))
+    .where(and(eq(chats.id, chatId), eq(chats.userId, userId)))
     .limit(1);
 
+  // Check if chat exists under a different user
+  const chatUnderDifferentUser = await db
+    .select()
+    .from(chats)
+    .where(and(eq(chats.id, chatId), ne(chats.userId, userId)))
+    .limit(1);
+
+  if (chatUnderDifferentUser.length > 0) {
+    throw new Error(`Chat with ID ${chatId} already exists under a different user`);
+  }
+
   if (existingChat.length > 0) {
-    // Update existing chat
+    // Delete all existing messages for this chat
+    await db.delete(messages).where(eq(messages.chatId, chatId));
+
+    // Update the chat title and timestamp
     await db
       .update(chats)
       .set({
         title,
-        messages,
         updatedAt: new Date(),
       })
       .where(eq(chats.id, chatId));
@@ -98,9 +112,64 @@ export async function upsertChat({
       id: chatId,
       userId,
       title,
-      messages,
     });
   }
+
+  // Insert all messages
+  if (messageArray.length > 0) {
+    const messageValues = messageArray.map((message, index) => ({
+      chatId,
+      role: message.role,
+      parts: message.content,
+      order: index,
+    }));
+
+    await db.insert(messages).values(messageValues);
+  }
+}
+
+export async function getChat(chatId: string, userId: string): Promise<{
+  chat: DB.Chat;
+  messages: Message[];
+} | null> {
+  const chat = await db
+    .select()
+    .from(chats)
+    .where(and(eq(chats.id, chatId), eq(chats.userId, userId)))
+    .limit(1);
+
+  if (!chat[0]) {
+    return null;
+  }
+
+  const messageRows = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.chatId, chatId))
+    .orderBy(asc(messages.order));
+
+  const chatMessages: Message[] = messageRows.map((msg: DB.Message) => ({
+    id: msg.id,
+    role: msg.role as "user" | "assistant" | "system",
+    content: msg.parts as string,
+  }));
+
+  return {
+    chat: chat[0],
+    messages: chatMessages,
+  };
+}
+
+export async function getChats(userId: string): Promise<DB.Chat[]> {
+  return db
+    .select()
+    .from(chats)
+    .where(eq(chats.userId, userId))
+    .orderBy(desc(chats.updatedAt));
+}
+
+export async function deleteChat(chatId: string): Promise<void> {
+  await db.delete(chats).where(eq(chats.id, chatId));
 }
 
 export function appendResponseMessages({
@@ -111,26 +180,4 @@ export function appendResponseMessages({
   responseMessages: Message[];
 }): Message[] {
   return [...messages, ...responseMessages];
-}
-
-export async function getChatsByUserId(userId: string): Promise<DB.Chat[]> {
-  return db
-    .select()
-    .from(chats)
-    .where(eq(chats.userId, userId))
-    .orderBy(chats.updatedAt);
-}
-
-export async function getChatById(chatId: string): Promise<DB.Chat | null> {
-  const result = await db
-    .select()
-    .from(chats)
-    .where(eq(chats.id, chatId))
-    .limit(1);
-
-  return result[0] || null;
-}
-
-export async function deleteChat(chatId: string): Promise<void> {
-  await db.delete(chats).where(eq(chats.id, chatId));
 }
