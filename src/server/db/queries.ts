@@ -35,7 +35,7 @@ export async function checkUserRateLimit(userId: string): Promise<{
       and(eq(userRequests.userId, userId), gte(userRequests.createdAt, today)),
     );
 
-  const currentCount = result?.count || 0;
+  const currentCount = result?.count ?? 0;
   const allowed = currentCount < DAILY_REQUEST_LIMIT;
 
   return {
@@ -62,7 +62,7 @@ export async function getUserRequestCount(userId: string): Promise<number> {
       and(eq(userRequests.userId, userId), gte(userRequests.createdAt, today)),
     );
 
-  return result?.count || 0;
+  return result?.count ?? 0;
 }
 
 export async function upsertChat({
@@ -91,7 +91,9 @@ export async function upsertChat({
     .limit(1);
 
   if (chatUnderDifferentUser.length > 0) {
-    throw new Error(`Chat with ID ${chatId} already exists under a different user`);
+    throw new Error(
+      `Chat with ID ${chatId} already exists under a different user`,
+    );
   }
 
   if (existingChat.length > 0) {
@@ -120,7 +122,7 @@ export async function upsertChat({
     const messageValues = messageArray.map((message, index) => ({
       chatId,
       role: message.role,
-      parts: message.content,
+      parts: message.parts,
       order: index,
     }));
 
@@ -128,7 +130,10 @@ export async function upsertChat({
   }
 }
 
-export async function getChat(chatId: string, userId: string): Promise<{
+export async function getChat(
+  chatId: string,
+  userId: string,
+): Promise<{
   chat: DB.Chat;
   messages: Message[];
 } | null> {
@@ -151,7 +156,8 @@ export async function getChat(chatId: string, userId: string): Promise<{
   const chatMessages: Message[] = messageRows.map((msg: DB.Message) => ({
     id: msg.id,
     role: msg.role as "user" | "assistant" | "system",
-    content: msg.parts as string,
+    content: typeof msg.parts === "string" ? msg.parts : "",
+    parts: msg.parts as Message["parts"],
   }));
 
   return {
@@ -170,14 +176,4 @@ export async function getChats(userId: string): Promise<DB.Chat[]> {
 
 export async function deleteChat(chatId: string): Promise<void> {
   await db.delete(chats).where(eq(chats.id, chatId));
-}
-
-export function appendResponseMessages({
-  messages,
-  responseMessages,
-}: {
-  messages: Message[];
-  responseMessages: Message[];
-}): Message[] {
-  return [...messages, ...responseMessages];
 }

@@ -1,5 +1,9 @@
 import type { Message } from "ai";
-import { streamText, createDataStreamResponse } from "ai";
+import {
+  streamText,
+  createDataStreamResponse,
+  appendResponseMessages,
+} from "ai";
 import { z } from "zod";
 import { auth } from "~/server/auth";
 import { model } from "~/models";
@@ -8,7 +12,6 @@ import {
   checkUserRateLimit,
   recordUserRequest,
   upsertChat,
-  appendResponseMessages,
 } from "~/server/db/queries";
 
 export const maxDuration = 60;
@@ -50,9 +53,41 @@ export async function POST(request: Request) {
     chatId?: string;
   };
 
+  // If chatId is provided, check if it belongs to the user
+  if (body.chatId) {
+    const { getChat } = await import("~/server/db/queries");
+    const chat = await getChat(body.chatId, session.user.id);
+    if (!chat) {
+      return new Response("Forbidden: You do not have access to this chat.", {
+        status: 403,
+      });
+    }
+  }
+
   return createDataStreamResponse({
     execute: async (dataStream) => {
       const { messages, chatId } = body;
+
+      // Generate a chatId if not provided
+      const finalChatId = chatId ?? crypto.randomUUID();
+
+      // Create the chat before the stream begins to protect against broken streams
+      const lastUserMessage = messages
+        .filter((msg) => msg.role === "user")
+        .at(-1);
+      const initialTitle = lastUserMessage
+        ? lastUserMessage.content.slice(0, 50) + "..."
+        : "New Chat";
+
+      if (!chatId) {
+        // Only create a new chat if no chatId was provided
+        await upsertChat({
+          userId: session.user.id,
+          chatId: finalChatId,
+          title: initialTitle,
+          messages: messages,
+        });
+      }
 
       const result = streamText({
         model,
@@ -78,23 +113,11 @@ Be helpful, accurate, and always provide properly formatted source links when us
         onFinish: async ({ response }) => {
           // Record the request after we've confirmed it's allowed
           await recordUserRequest(session.user.id);
-          
-          // Convert response messages to the expected format, filtering out tool messages
-          const responseMessages: Message[] = response.messages
-            .filter((msg) => msg.role === "assistant")
-            .map((msg) => ({
-              id: msg.id,
-              role: msg.role as "assistant",
-              content:
-                typeof msg.content === "string"
-                  ? msg.content
-                  : JSON.stringify(msg.content),
-            }));
 
-          // Merge existing messages with the new result
+          // Use the proper appendResponseMessages from the AI SDK
           const updatedMessages = appendResponseMessages({
             messages,
-            responseMessages,
+            responseMessages: response.messages as any,
           });
 
           const lastMessage = updatedMessages.at(-1);
@@ -102,10 +125,7 @@ Be helpful, accurate, and always provide properly formatted source links when us
             return;
           }
 
-          // Generate a chatId if not provided
-          const finalChatId = chatId || crypto.randomUUID();
-
-          // Save the chat to the database
+          // Update the chat with the complete message history
           await upsertChat({
             userId: session.user.id,
             chatId: finalChatId,
