@@ -122,7 +122,11 @@ export async function POST(request: Request) {
         },
         system: `You are a helpful AI assistant with access to web search and web scraping capabilities. 
 
-When users ask questions that require current information, facts, or recent events, you should use the searchWeb tool to find relevant information from the internet.
+CURRENT DATE AND TIME: ${new Date().toISOString()}
+
+When users ask questions that require current information, facts, or recent events, you should use the searchWeb tool to find relevant information from the internet. The search results include publication dates for articles, which you should use to determine how recent the information is.
+
+When users ask for "up to date" information, compare the publication dates in your search results with the current date above. Prioritize information from sources that are more recent, and clearly indicate when information might be outdated.
 
 You have access to the scrapePages tool which can extract the full text content from web pages. You MUST ALWAYS use this tool after performing a web search to get the complete content of the most relevant web pages found in your search results.
 
@@ -182,6 +186,7 @@ Be helpful, accurate, and always provide properly formatted source links when us
                 title: result.title,
                 link: result.link,
                 snippet: result.snippet,
+                date: result.date,
               }));
             },
           },
