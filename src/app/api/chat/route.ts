@@ -5,6 +5,8 @@ import {
   appendResponseMessages,
 } from "ai";
 import { z } from "zod";
+import { Langfuse } from "langfuse";
+import { env } from "~/env";
 import { auth } from "~/server/auth";
 import { model } from "~/models";
 import { searchSerper } from "~/serper";
@@ -13,6 +15,10 @@ import {
   recordUserRequest,
   upsertChat,
 } from "~/server/db/queries";
+
+const langfuse = new Langfuse({
+  environment: env.NODE_ENV,
+});
 
 export const maxDuration = 60;
 
@@ -77,6 +83,8 @@ export async function POST(request: Request) {
         ? lastUserMessage.content.slice(0, 50) + "..."
         : "New Chat";
 
+      let currentChatId = chatId;
+
       if (isNewChat) {
         // Only create a new chat if isNewChat is true
         await upsertChat({
@@ -93,11 +101,24 @@ export async function POST(request: Request) {
         });
       }
 
+      // Create Langfuse trace with session and user tracking
+      const trace = langfuse.trace({
+        sessionId: currentChatId,
+        name: "chat",
+        userId: session.user.id,
+      });
+
       const result = streamText({
         model,
         messages,
         maxSteps: 10,
-        experimental_telemetry: { isEnabled: true },
+        experimental_telemetry: {
+          isEnabled: true,
+          functionId: `agent`,
+          metadata: {
+            langfuseTraceId: trace.id,
+          },
+        },
         system: `You are a helpful AI assistant with access to web search capabilities. 
 
 When users ask questions that require current information, facts, or recent events, you should use the searchWeb tool to find relevant information from the internet.
@@ -133,10 +154,13 @@ Be helpful, accurate, and always provide properly formatted source links when us
           // Update the chat with the complete message history
           await upsertChat({
             userId: session.user.id,
-            chatId: chatId,
+            chatId: currentChatId,
             title: lastMessage.content.slice(0, 50) + "...",
             messages: updatedMessages,
           });
+
+          // Flush the trace to Langfuse
+          await langfuse.flushAsync();
         },
         tools: {
           searchWeb: {
