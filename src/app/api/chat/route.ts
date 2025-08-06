@@ -30,8 +30,29 @@ export async function POST(request: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
+  // Create Langfuse trace at the beginning
+  const trace = langfuse.trace({
+    name: "chat",
+    userId: session.user.id,
+  });
+
   // Check rate limit before processing the request
+  const rateLimitSpan = trace.span({
+    name: "check-user-rate-limit",
+    input: {
+      userId: session.user.id,
+    },
+  });
+
   const rateLimitCheck = await checkUserRateLimit(session.user.id);
+
+  rateLimitSpan.end({
+    output: {
+      allowed: rateLimitCheck.allowed,
+      currentCount: rateLimitCheck.currentCount,
+      limit: rateLimitCheck.limit,
+    },
+  });
 
   if (!rateLimitCheck.allowed) {
     return new Response(
@@ -63,8 +84,24 @@ export async function POST(request: Request) {
 
   // If chatId is provided and it's not a new chat, check if it belongs to the user
   if (!body.isNewChat) {
+    const getChatSpan = trace.span({
+      name: "get-existing-chat",
+      input: {
+        chatId: body.chatId,
+        userId: session.user.id,
+      },
+    });
+
     const { getChat } = await import("~/server/db/queries");
     const chat = await getChat(body.chatId, session.user.id);
+
+    getChatSpan.end({
+      output: {
+        chatFound: !!chat,
+        chatId: body.chatId,
+      },
+    });
+
     if (!chat) {
       return new Response("Forbidden: You do not have access to this chat.", {
         status: 403,
@@ -88,11 +125,28 @@ export async function POST(request: Request) {
 
       if (isNewChat) {
         // Only create a new chat if isNewChat is true
+        const createChatSpan = trace.span({
+          name: "create-new-chat",
+          input: {
+            userId: session.user.id,
+            chatId: chatId,
+            title: initialTitle,
+            messageCount: messages.length,
+          },
+        });
+
         await upsertChat({
           userId: session.user.id,
           chatId: chatId,
           title: initialTitle,
           messages: messages,
+        });
+
+        createChatSpan.end({
+          output: {
+            chatId: chatId,
+            title: initialTitle,
+          },
         });
 
         // Send the new chat ID to the frontend
@@ -102,11 +156,9 @@ export async function POST(request: Request) {
         });
       }
 
-      // Create Langfuse trace with session and user tracking
-      const trace = langfuse.trace({
+      // Update trace with sessionId now that we have the chatId
+      trace.update({
         sessionId: currentChatId,
-        name: "chat",
-        userId: session.user.id,
       });
 
       const result = streamText({
@@ -147,7 +199,20 @@ For example, instead of writing "According to https://example.com/article", writ
 Be helpful, accurate, and always provide properly formatted source links when using web search results.`,
         onFinish: async ({ response }) => {
           // Record the request after we've confirmed it's allowed
+          const recordRequestSpan = trace.span({
+            name: "record-user-request",
+            input: {
+              userId: session.user.id,
+            },
+          });
+
           await recordUserRequest(session.user.id);
+
+          recordRequestSpan.end({
+            output: {
+              success: true,
+            },
+          });
 
           // Use the proper appendResponseMessages from the AI SDK
           const updatedMessages = appendResponseMessages({
@@ -161,11 +226,28 @@ Be helpful, accurate, and always provide properly formatted source links when us
           }
 
           // Update the chat with the complete message history
+          const updateChatSpan = trace.span({
+            name: "update-chat-with-response",
+            input: {
+              userId: session.user.id,
+              chatId: currentChatId,
+              title: lastMessage.content.slice(0, 50) + "...",
+              messageCount: updatedMessages.length,
+            },
+          });
+
           await upsertChat({
             userId: session.user.id,
             chatId: currentChatId,
             title: lastMessage.content.slice(0, 50) + "...",
             messages: updatedMessages,
+          });
+
+          updateChatSpan.end({
+            output: {
+              chatId: currentChatId,
+              title: lastMessage.content.slice(0, 50) + "...",
+            },
           });
 
           // Flush the trace to Langfuse
