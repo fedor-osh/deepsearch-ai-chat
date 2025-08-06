@@ -97,6 +97,7 @@ export async function POST(request: Request) {
         model,
         messages,
         maxSteps: 10,
+        experimental_telemetry: { isEnabled: true },
         system: `You are a helpful AI assistant with access to web search capabilities. 
 
 When users ask questions that require current information, facts, or recent events, you should use the searchWeb tool to find relevant information from the internet.
