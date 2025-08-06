@@ -11,6 +11,9 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "dev": "next dev --turbo",
+    "evals": "evalite watch",
+    "evals:run": "vitest run evals/",
+    "evals:watch": "vitest watch evals/",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "preview": "next build && next start",
@@ -61,8 +64,8 @@
     "@types/turndown": "^5.0.5",
     "@typescript-eslint/eslint-plugin": "^8.1.0",
     "@typescript-eslint/parser": "^8.1.0",
-    "autoevals": "^0.0.119",
-    "dotenv": "^16.4.7",
+    "autoevals": "^0.0.130",
+    "dotenv": "^17.2.0",
     "drizzle-kit": "^0.24.0",
     "eslint": "^8.57.0",
     "eslint-config-next": "^15.0.1",
@@ -75,7 +78,7 @@
     "tailwindcss": "^3.4.3",
     "typescript": "^5.8.2",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^3.0.5"
+    "vitest": "^3.2.4"
   },
   "ct3aMetadata": {
     "initVersion": "7.38.1"
