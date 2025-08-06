@@ -3,6 +3,7 @@ import { z } from "zod";
 import { model } from "~/models";
 import { searchSerper } from "~/serper";
 import { bulkCrawlWebsites } from "~/scraper";
+import { env } from "~/env";
 
 export const streamFromDeepSearch = (opts: {
   messages: Message[];
@@ -47,7 +48,7 @@ Be helpful, accurate, and always provide properly formatted source links when us
         }),
         execute: async ({ query }, { abortSignal }) => {
           const results = await searchSerper(
-            { q: query, num: 10 },
+            { q: query, num: env.SEARCH_RESULTS_COUNT },
             abortSignal,
           );
 
