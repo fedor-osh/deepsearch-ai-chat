@@ -7,11 +7,10 @@ import { Langfuse } from "langfuse";
 import { env } from "~/env";
 import { auth } from "~/server/auth";
 import {
-  checkUserRateLimit,
-  recordUserRequest,
   upsertChat,
 } from "~/server/db/queries";
 import { streamFromDeepSearch } from "~/deep-search";
+import { checkRateLimit, recordRateLimit } from "~/server/rate-limit";
 
 const langfuse = new Langfuse({
   environment: env.NODE_ENV,
@@ -34,43 +33,59 @@ export async function POST(request: Request) {
 
   // Check rate limit before processing the request
   const rateLimitSpan = trace.span({
-    name: "check-user-rate-limit",
+    name: "check-global-rate-limit",
     input: {
       userId: session.user.id,
     },
   });
 
-  const rateLimitCheck = await checkUserRateLimit(session.user.id);
+  // Configure rate limiting: 1 request per 5 seconds for testing
+  const rateLimitConfig = {
+    maxRequests: 1,
+    maxRetries: 3,
+    windowMs: 5_000, // 5 seconds
+    keyPrefix: "global",
+  };
+
+  const rateLimitCheck = await checkRateLimit(rateLimitConfig);
 
   rateLimitSpan.end({
     output: {
       allowed: rateLimitCheck.allowed,
-      currentCount: rateLimitCheck.currentCount,
-      limit: rateLimitCheck.limit,
+      totalHits: rateLimitCheck.totalHits,
+      remaining: rateLimitCheck.remaining,
+      resetTime: rateLimitCheck.resetTime,
     },
   });
 
   if (!rateLimitCheck.allowed) {
-    return new Response(
-      JSON.stringify({
-        error: "Rate limit exceeded",
-        message: `You have exceeded your daily limit of ${rateLimitCheck.limit} requests. You have made ${rateLimitCheck.currentCount} requests today.`,
-        currentCount: rateLimitCheck.currentCount,
-        limit: rateLimitCheck.limit,
-      }),
-      {
-        status: 429,
-        headers: {
-          "Content-Type": "application/json",
-          "X-RateLimit-Limit": rateLimitCheck.limit.toString(),
-          "X-RateLimit-Remaining": "0",
-          "X-RateLimit-Reset": new Date(
-            Date.now() + 24 * 60 * 60 * 1000,
-          ).toISOString(),
+    console.log("Rate limit exceeded, waiting...");
+    const isAllowed = await rateLimitCheck.retry();
+    
+    // If the rate limit is still exceeded after retries, return a 429
+    if (!isAllowed) {
+      return new Response(
+        JSON.stringify({
+          error: "Rate limit exceeded",
+          message: `Rate limit exceeded. Please try again later.`,
+          totalHits: rateLimitCheck.totalHits,
+          resetTime: rateLimitCheck.resetTime,
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "X-RateLimit-Limit": rateLimitConfig.maxRequests.toString(),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": new Date(rateLimitCheck.resetTime).toISOString(),
+          },
         },
-      },
-    );
+      );
+    }
   }
+
+  // Record the request
+  await recordRateLimit(rateLimitConfig);
 
   const body = (await request.json()) as {
     messages: Array<Message>;
@@ -117,7 +132,7 @@ export async function POST(request: Request) {
         ? lastUserMessage.content.slice(0, 50) + "..."
         : "New Chat";
 
-      let currentChatId = chatId;
+      const currentChatId = chatId;
 
       if (isNewChat) {
         // Only create a new chat if isNewChat is true
@@ -160,21 +175,6 @@ export async function POST(request: Request) {
       const result = streamFromDeepSearch({
         messages,
         onFinish: async ({ response }) => {
-          // Record the request after we've confirmed it's allowed
-          const recordRequestSpan = trace.span({
-            name: "record-user-request",
-            input: {
-              userId: session.user.id,
-            },
-          });
-
-          await recordUserRequest(session.user.id);
-
-          recordRequestSpan.end({
-            output: {
-              success: true,
-            },
-          });
 
           // Use the proper appendResponseMessages from the AI SDK
           const updatedMessages = appendResponseMessages({
