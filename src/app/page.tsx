@@ -1,15 +1,10 @@
 import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { auth } from "~/server/auth/index.ts";
+import { getChats, getChat } from "~/server/db/queries.ts";
+import type { Message } from "ai";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
-
-const chats = [
-  {
-    id: "1",
-    title: "My First Chat",
-  },
-];
 
 type Props = {
   searchParams: Promise<{
@@ -22,6 +17,29 @@ export default async function HomePage({ searchParams }: Props) {
   const session = await auth();
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
+
+  // Fetch chats from database if user is authenticated
+  const chats =
+    isAuthenticated && session?.user?.id ? await getChats(session.user.id) : [];
+
+  // Fetch active chat data if chatId is provided and user is authenticated
+  let initialMessages: Message[] = [];
+  if (activeChatId && isAuthenticated && session?.user?.id) {
+    const chatData = await getChat(activeChatId, session.user.id);
+    if (chatData) {
+      // Map the database messages to the format expected by useChat
+      initialMessages = chatData.messages.map((msg) => ({
+        id: msg.id,
+        // msg.role is typed as string, so we need to cast it to the correct type
+        role: msg.role as "user" | "assistant",
+        // msg.parts is typed as unknown[], so we need to cast it to the correct type
+        parts: msg.parts as Message["parts"],
+        // content is not persisted, so we can safely pass an empty string, because
+        // parts are always present, and the AI SDK will use the parts to construct the content
+        content: "",
+      }));
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-950">
@@ -36,7 +54,7 @@ export default async function HomePage({ searchParams }: Props) {
                 className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
                 title="New Chat"
               >
-                <PlusIcon className="h-5 w-5" />
+                <PlusIcon className="size-5" />
               </Link>
             )}
           </div>
@@ -77,6 +95,7 @@ export default async function HomePage({ searchParams }: Props) {
         userName={userName}
         isAuthenticated={isAuthenticated}
         chatId={activeChatId}
+        initialMessages={initialMessages}
       />
     </div>
   );
