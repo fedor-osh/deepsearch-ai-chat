@@ -50,11 +50,12 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as {
     messages: Array<Message>;
-    chatId?: string;
+    chatId: string;
+    isNewChat: boolean;
   };
 
-  // If chatId is provided, check if it belongs to the user
-  if (body.chatId) {
+  // If chatId is provided and it's not a new chat, check if it belongs to the user
+  if (!body.isNewChat) {
     const { getChat } = await import("~/server/db/queries");
     const chat = await getChat(body.chatId, session.user.id);
     if (!chat) {
@@ -66,10 +67,7 @@ export async function POST(request: Request) {
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
-      const { messages, chatId } = body;
-
-      // Generate a chatId if not provided
-      const finalChatId = chatId ?? crypto.randomUUID();
+      const { messages, chatId, isNewChat } = body;
 
       // Create the chat before the stream begins to protect against broken streams
       const lastUserMessage = messages
@@ -79,11 +77,11 @@ export async function POST(request: Request) {
         ? lastUserMessage.content.slice(0, 50) + "..."
         : "New Chat";
 
-      if (!chatId) {
-        // Only create a new chat if no chatId was provided
+      if (isNewChat) {
+        // Only create a new chat if isNewChat is true
         await upsertChat({
           userId: session.user.id,
-          chatId: finalChatId,
+          chatId: chatId,
           title: initialTitle,
           messages: messages,
         });
@@ -91,7 +89,7 @@ export async function POST(request: Request) {
         // Send the new chat ID to the frontend
         dataStream.writeData({
           type: "NEW_CHAT_CREATED",
-          chatId: finalChatId,
+          chatId: chatId,
         });
       }
 
@@ -134,7 +132,7 @@ Be helpful, accurate, and always provide properly formatted source links when us
           // Update the chat with the complete message history
           await upsertChat({
             userId: session.user.id,
-            chatId: finalChatId,
+            chatId: chatId,
             title: lastMessage.content.slice(0, 50) + "...",
             messages: updatedMessages,
           });

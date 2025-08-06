@@ -13,10 +13,14 @@ type Props = {
 };
 
 export default async function HomePage({ searchParams }: Props) {
-  const { id: activeChatId } = await searchParams;
+  const { id: chatIdFromUrl } = await searchParams;
   const session = await auth();
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
+
+  // Generate a stable chatId - use the one from URL or generate a new one
+  const chatId = chatIdFromUrl ?? crypto.randomUUID();
+  const isNewChat = !chatIdFromUrl;
 
   // Fetch chats from database if user is authenticated
   const chats =
@@ -24,8 +28,8 @@ export default async function HomePage({ searchParams }: Props) {
 
   // Fetch active chat data if chatId is provided and user is authenticated
   let initialMessages: Message[] = [];
-  if (activeChatId && isAuthenticated && session?.user?.id) {
-    const chatData = await getChat(activeChatId, session.user.id);
+  if (chatIdFromUrl && isAuthenticated && session?.user?.id) {
+    const chatData = await getChat(chatIdFromUrl, session.user.id);
     if (chatData) {
       // Map the database messages to the format expected by useChat
       initialMessages = chatData.messages.map((msg) => ({
@@ -66,7 +70,7 @@ export default async function HomePage({ searchParams }: Props) {
                 <Link
                   href={`/?id=${chat.id}`}
                   className={`flex-1 rounded-lg p-3 text-left text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                    chat.id === activeChatId
+                    chat.id === chatIdFromUrl
                       ? "bg-gray-700"
                       : "hover:bg-gray-750 bg-gray-800"
                   }`}
@@ -92,9 +96,11 @@ export default async function HomePage({ searchParams }: Props) {
       </div>
 
       <ChatPage
+        key={chatId}
         userName={userName}
         isAuthenticated={isAuthenticated}
-        chatId={activeChatId}
+        chatId={chatId}
+        isNewChat={isNewChat}
         initialMessages={initialMessages}
       />
     </div>

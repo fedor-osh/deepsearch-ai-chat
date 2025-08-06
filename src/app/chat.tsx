@@ -13,7 +13,8 @@ import { isNewChatCreated } from "~/utils";
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
-  chatId: string | undefined;
+  chatId: string;
+  isNewChat: boolean;
   initialMessages: Message[];
 }
 
@@ -21,6 +22,7 @@ export const ChatPage = ({
   userName,
   isAuthenticated,
   chatId,
+  isNewChat,
   initialMessages,
 }: ChatProps) => {
   const router = useRouter();
@@ -28,6 +30,7 @@ export const ChatPage = ({
     useChat({
       body: {
         chatId,
+        isNewChat,
       },
       initialMessages,
     });
