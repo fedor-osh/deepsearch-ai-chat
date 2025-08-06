@@ -136,6 +136,34 @@ export const userRequestsRelations = relations(userRequests, ({ one }) => ({
   user: one(users, { fields: [userRequests.userId], references: [users.id] }),
 }));
 
+export const chats = createTable("chat", {
+  id: varchar("id", { length: 255 })
+    .notNull()
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: varchar("user_id", { length: 255 })
+    .notNull()
+    .references(() => users.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  messages: json("messages").notNull(),
+  createdAt: timestamp("created_at", {
+    mode: "date",
+    withTimezone: true,
+  })
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp("updated_at", {
+    mode: "date",
+    withTimezone: true,
+  })
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const chatsRelations = relations(chats, ({ one }) => ({
+  user: one(users, { fields: [chats.userId], references: [users.id] }),
+}));
+
 export declare namespace DB {
   export type User = InferSelectModel<typeof users>;
   export type NewUser = InferInsertModel<typeof users>;
@@ -153,4 +181,6 @@ export declare namespace DB {
 
   export type UserRequest = InferSelectModel<typeof userRequests>;
   export type NewUserRequest = InferInsertModel<typeof userRequests>;
+  export type Chat = InferSelectModel<typeof chats>;
+  export type NewChat = InferInsertModel<typeof chats>;
 }

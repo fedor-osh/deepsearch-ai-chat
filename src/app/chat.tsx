@@ -14,7 +14,7 @@ interface ChatProps {
 export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
   const { messages, input, handleInputChange, handleSubmit, isLoading } =
     useChat();
-
+    
   if (!isAuthenticated) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center">

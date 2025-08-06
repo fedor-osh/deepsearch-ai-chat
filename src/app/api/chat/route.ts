@@ -4,7 +4,12 @@ import { z } from "zod";
 import { auth } from "~/server/auth";
 import { model } from "~/models";
 import { searchSerper } from "~/serper";
-import { checkUserRateLimit, recordUserRequest } from "~/server/db/queries";
+import {
+  checkUserRateLimit,
+  recordUserRequest,
+  upsertChat,
+  appendResponseMessages,
+} from "~/server/db/queries";
 
 export const maxDuration = 60;
 
@@ -42,14 +47,12 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as {
     messages: Array<Message>;
+    chatId?: string;
   };
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
-      const { messages } = body;
-
-      // Record the request after we've confirmed it's allowed
-      await recordUserRequest(session.user.id);
+      const { messages, chatId } = body;
 
       const result = streamText({
         model,
@@ -72,6 +75,44 @@ After searching, ALWAYS cite your sources using proper markdown link formatting:
 For example, instead of writing "According to https://example.com/article", write "According to [Example Article](https://example.com/article)".
 
 Be helpful, accurate, and always provide properly formatted source links when using web search results.`,
+        onFinish: async ({ response }) => {
+          // Record the request after we've confirmed it's allowed
+          await recordUserRequest(session.user.id);
+          
+          // Convert response messages to the expected format, filtering out tool messages
+          const responseMessages: Message[] = response.messages
+            .filter((msg) => msg.role === "assistant")
+            .map((msg) => ({
+              id: msg.id,
+              role: msg.role as "assistant",
+              content:
+                typeof msg.content === "string"
+                  ? msg.content
+                  : JSON.stringify(msg.content),
+            }));
+
+          // Merge existing messages with the new result
+          const updatedMessages = appendResponseMessages({
+            messages,
+            responseMessages,
+          });
+
+          const lastMessage = updatedMessages.at(-1);
+          if (!lastMessage) {
+            return;
+          }
+
+          // Generate a chatId if not provided
+          const finalChatId = chatId || crypto.randomUUID();
+
+          // Save the chat to the database
+          await upsertChat({
+            userId: session.user.id,
+            chatId: finalChatId,
+            title: lastMessage.content.slice(0, 50) + "...",
+            messages: updatedMessages,
+          });
+        },
         tools: {
           searchWeb: {
             parameters: z.object({

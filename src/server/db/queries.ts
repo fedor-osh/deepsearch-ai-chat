@@ -1,6 +1,8 @@
 import { and, count, eq, gte } from "drizzle-orm";
 import { db } from "./index";
-import { users, userRequests } from "./schema";
+import { users, userRequests, chats } from "./schema";
+import type { Message } from "ai";
+import type { DB } from "./schema";
 
 const DAILY_REQUEST_LIMIT = 50; // Adjust this value as needed
 
@@ -30,10 +32,7 @@ export async function checkUserRateLimit(userId: string): Promise<{
     .select({ count: count() })
     .from(userRequests)
     .where(
-      and(
-        eq(userRequests.userId, userId),
-        gte(userRequests.createdAt, today),
-      ),
+      and(eq(userRequests.userId, userId), gte(userRequests.createdAt, today)),
     );
 
   const currentCount = result?.count || 0;
@@ -60,11 +59,78 @@ export async function getUserRequestCount(userId: string): Promise<number> {
     .select({ count: count() })
     .from(userRequests)
     .where(
-      and(
-        eq(userRequests.userId, userId),
-        gte(userRequests.createdAt, today),
-      ),
+      and(eq(userRequests.userId, userId), gte(userRequests.createdAt, today)),
     );
 
   return result?.count || 0;
-} 
+}
+
+export async function upsertChat({
+  userId,
+  chatId,
+  title,
+  messages,
+}: {
+  userId: string;
+  chatId: string;
+  title: string;
+  messages: Message[];
+}) {
+  const existingChat = await db
+    .select()
+    .from(chats)
+    .where(eq(chats.id, chatId))
+    .limit(1);
+
+  if (existingChat.length > 0) {
+    // Update existing chat
+    await db
+      .update(chats)
+      .set({
+        title,
+        messages,
+        updatedAt: new Date(),
+      })
+      .where(eq(chats.id, chatId));
+  } else {
+    // Create new chat
+    await db.insert(chats).values({
+      id: chatId,
+      userId,
+      title,
+      messages,
+    });
+  }
+}
+
+export function appendResponseMessages({
+  messages,
+  responseMessages,
+}: {
+  messages: Message[];
+  responseMessages: Message[];
+}): Message[] {
+  return [...messages, ...responseMessages];
+}
+
+export async function getChatsByUserId(userId: string): Promise<DB.Chat[]> {
+  return db
+    .select()
+    .from(chats)
+    .where(eq(chats.userId, userId))
+    .orderBy(chats.updatedAt);
+}
+
+export async function getChatById(chatId: string): Promise<DB.Chat | null> {
+  const result = await db
+    .select()
+    .from(chats)
+    .where(eq(chats.id, chatId))
+    .limit(1);
+
+  return result[0] || null;
+}
+
+export async function deleteChat(chatId: string): Promise<void> {
+  await db.delete(chats).where(eq(chats.id, chatId));
+}
