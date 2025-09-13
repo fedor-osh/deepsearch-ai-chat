@@ -20,10 +20,7 @@ export const actionSchema = z.object({
     .optional(),
 });
 
-export const getNextAction = async (
-  context: SystemContext,
-  userMessage: string,
-) => {
+export const getNextAction = async (context: SystemContext) => {
   const result = await generateObject({
     model,
     schema: actionSchema,
@@ -48,7 +45,7 @@ After searching, always scrape the most relevant URLs to get comprehensive infor
 
 CURRENT DATE AND TIME: ${new Date().toISOString()}
 
-The user's question is: "${userMessage}"
+The user's question is: "${context.getInitialQuestion()}"
 
 Here is the current context:
 
