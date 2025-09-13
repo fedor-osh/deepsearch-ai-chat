@@ -1,3 +1,19 @@
+export interface SearchAction {
+  type: "search";
+  query: string;
+}
+
+export interface ScrapeAction {
+  type: "scrape";
+  urls: string[];
+}
+
+export interface AnswerAction {
+  type: "answer";
+}
+
+export type Action = SearchAction | ScrapeAction | AnswerAction;
+
 type QueryResultSearchResult = {
   date: string;
   title: string;
@@ -36,6 +52,10 @@ export class SystemContext {
 
   shouldStop() {
     return this.step >= 10;
+  }
+
+  incrementStep() {
+    this.step++;
   }
 
   reportQueries(queries: QueryResult[]) {
