@@ -1,6 +1,7 @@
-import { streamText, type StreamTextResult } from "ai";
+import { streamText, smoothStream, type StreamTextResult } from "ai";
 import { model } from "~/models";
 import type { SystemContext } from "./system-context";
+import { markdownJoinerTransform } from "~/utils";
 
 export interface AnswerQuestionOptions {
   isFinal: boolean;
@@ -53,5 +54,12 @@ Please provide a comprehensive answer to the user's question, citing your source
     model,
     system: systemPrompt,
     prompt: `Based on the information gathered, please answer the user's question: "${context.getInitialQuestion()}"`,
+    experimental_transform: [
+      smoothStream({
+        delayInMs: 20,
+        chunking: "line",
+      }),
+      markdownJoinerTransform<Record<string, never>>,
+    ],
   });
 };
