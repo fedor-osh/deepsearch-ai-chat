@@ -69,7 +69,7 @@ export const Factuality = createScorer<Message[], string, string>({
   scorer: async ({ input, expected, output }) => {
     // Extract the user's question from the messages
     const userMessage = input.find((msg) => msg.role === "user");
-    const question = userMessage?.content || "";
+    const question = userMessage?.content ?? "";
 
     return checkFactuality({
       question,

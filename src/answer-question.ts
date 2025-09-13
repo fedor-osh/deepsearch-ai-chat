@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { streamText, type StreamTextResult } from "ai";
 import { model } from "~/models";
 import type { SystemContext } from "./system-context";
 
@@ -9,10 +9,10 @@ export interface AnswerQuestionOptions {
 /**
  * Answer the user's question based on the current context
  */
-export const answerQuestion = async (
+export const answerQuestion = (
   context: SystemContext,
   options: AnswerQuestionOptions,
-): Promise<string> => {
+): StreamTextResult<Record<string, never>, string> => {
   const { isFinal } = options;
 
   const systemPrompt = isFinal
@@ -49,11 +49,9 @@ ${context.getScrapeHistory()}
 
 Please provide a comprehensive answer to the user's question, citing your sources appropriately.`;
 
-  const result = await generateText({
+  return streamText({
     model,
     system: systemPrompt,
     prompt: `Based on the information gathered, please answer the user's question: "${context.getInitialQuestion()}"`,
   });
-
-  return result.text;
 };

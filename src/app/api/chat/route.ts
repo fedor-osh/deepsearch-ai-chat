@@ -1,14 +1,9 @@
 import type { Message } from "ai";
-import {
-  createDataStreamResponse,
-  appendResponseMessages,
-} from "ai";
+import { createDataStreamResponse, appendResponseMessages } from "ai";
 import { Langfuse } from "langfuse";
 import { env } from "~/env";
 import { auth } from "~/server/auth";
-import {
-  upsertChat,
-} from "~/server/db/queries";
+import { upsertChat } from "~/server/db/queries";
 import { streamFromDeepSearch } from "~/deep-search";
 import { checkRateLimit, recordRateLimit } from "~/server/rate-limit";
 
@@ -61,7 +56,7 @@ export async function POST(request: Request) {
   if (!rateLimitCheck.allowed) {
     console.log("Rate limit exceeded, waiting...");
     const isAllowed = await rateLimitCheck.retry();
-    
+
     // If the rate limit is still exceeded after retries, return a 429
     if (!isAllowed) {
       return new Response(
@@ -77,7 +72,9 @@ export async function POST(request: Request) {
             "Content-Type": "application/json",
             "X-RateLimit-Limit": rateLimitConfig.maxRequests.toString(),
             "X-RateLimit-Remaining": "0",
-            "X-RateLimit-Reset": new Date(rateLimitCheck.resetTime).toISOString(),
+            "X-RateLimit-Reset": new Date(
+              rateLimitCheck.resetTime,
+            ).toISOString(),
           },
         },
       );
@@ -172,14 +169,13 @@ export async function POST(request: Request) {
         sessionId: currentChatId,
       });
 
-      const result = streamFromDeepSearch({
+      const result = await streamFromDeepSearch({
         messages,
         onFinish: async ({ response }) => {
-
           // Use the proper appendResponseMessages from the AI SDK
           const updatedMessages = appendResponseMessages({
             messages,
-            responseMessages: response.messages as any,
+            responseMessages: response.messages,
           });
 
           const lastMessage = updatedMessages.at(-1);

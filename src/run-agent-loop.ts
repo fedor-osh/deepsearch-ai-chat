@@ -1,3 +1,4 @@
+import type { StreamTextResult } from "ai";
 import { SystemContext } from "./system-context";
 import { getNextAction } from "./get-next-action";
 import { answerQuestion } from "./answer-question";
@@ -8,17 +9,12 @@ export interface RunAgentLoopOptions {
   userMessage: string;
 }
 
-export interface RunAgentLoopResult {
-  answer: string;
-  isFinal: boolean;
-}
-
 /**
  * Runs the agent loop that continues until we have an answer or we've taken 10 actions
  */
 export const runAgentLoop = async (
   options: RunAgentLoopOptions,
-): Promise<RunAgentLoopResult> => {
+): Promise<StreamTextResult<Record<string, never>, string>> => {
   const { userMessage } = options;
 
   // Create a new context with the initial question
@@ -37,13 +33,9 @@ export const runAgentLoop = async (
       const result = await scrapeUrl(nextAction.urls ?? []);
       context.reportScrapes(result);
     } else if (nextAction.type === "answer") {
-      const answer = await answerQuestion(context, {
+      return answerQuestion(context, {
         isFinal: false,
       });
-      return {
-        answer,
-        isFinal: false,
-      };
     }
 
     // We increment the step counter
@@ -52,9 +44,5 @@ export const runAgentLoop = async (
 
   // If we've taken 10 actions and still don't have an answer,
   // we ask the LLM to give its best attempt at an answer
-  const answer = await answerQuestion(context, { isFinal: true });
-  return {
-    answer,
-    isFinal: true,
-  };
+  return answerQuestion(context, { isFinal: true });
 };
